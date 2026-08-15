@@ -1,0 +1,29 @@
+# Build output
+target/
+*.class
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+
+# Secrets / local env
+.env
+.env.local
+application-local.yml
+application-local.properties
+
+# Logs
+*.log
+
+# Presentation deck (kept local only, not for the client repo)
+*.pptx

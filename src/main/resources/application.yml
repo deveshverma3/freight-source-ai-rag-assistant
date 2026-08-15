@@ -1,0 +1,93 @@
+app:
+  rag:
+    similarity-threshold: 0.5
+    top-k: 4
+  security:
+    # Local-development defaults only. Override both via environment
+    # variables before running this anywhere beyond a laptop -- see
+    # SecurityConfig, which warns at startup if the password is unchanged.
+    username: ${APP_SECURITY_USERNAME:admin}
+    password: ${APP_SECURITY_PASSWORD:changeme}
+
+spring:
+  application:
+    name: spring-ai-claude-rag-mcp
+
+  servlet:
+    multipart:
+      # Caps uploads accepted by POST /ingest/upload.
+      max-file-size: 20MB
+      max-request-size: 20MB
+
+  datasource:
+    url: jdbc:postgresql://localhost:5434/genai
+    username: genai
+    password: genai
+
+  ai:
+    # Disambiguates which provider owns each model role, since both
+    # Anthropic (chat) and Ollama (chat + embedding) starters are on
+    # the classpath -- without this Spring sees two ChatModel beans.
+    model:
+      chat: anthropic
+      embedding: ollama
+
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
+      chat:
+        model: claude-sonnet-5
+
+    ollama:
+      base-url: http://localhost:11434
+      embedding:
+        model: nomic-embed-text
+
+    vectorstore:
+      pgvector:
+        dimensions: 768          # must match nomic-embed-text's output size
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        initialize-schema: true  # auto-creates the vector_store table
+
+    mcp:
+      client:
+        enabled: true
+        type: SYNC
+        # Default is 20s. postgres-mcp's cold start (Python interpreter boot,
+        # module imports, DB pool init) reliably takes longer than that on
+        # this machine, well within normal bounds once warm -- just slower
+        # than the default timeout allows for the very first connection.
+        request-timeout: 60s
+        stdio:
+          connections:
+            filesystem:
+              command: npx
+              args:
+                - "-y"
+                - "@modelcontextprotocol/server-filesystem"
+                - "${MCP_FILESYSTEM_ROOT:.}"
+            postgres:
+              # Postgres MCP Pro (crystaldba/postgres-mcp) -- not the archived,
+              # vulnerable @modelcontextprotocol/server-postgres. --access-mode=restricted
+              # parses SQL before execution and rejects COMMIT/ROLLBACK, so read-only
+              # actually holds instead of being bypassable via transaction control statements.
+              #
+              # `--with mcp<2.0.0` pins the mcp SDK below its v2.0.0 release, which
+              # renamed/relocated FastMCP (mcp.server.fastmcp no longer exists there).
+              # postgres-mcp 0.3.0 doesn't cap its own mcp dependency, so without this
+              # pin uv resolves the incompatible v2 and the server crashes on import.
+              command: uvx
+              args:
+                - "--with"
+                - "mcp<2.0.0"
+                - "postgres-mcp"
+                - "--access-mode=restricted"
+                - "${POSTGRES_MCP_URL:postgresql://genai:genai@localhost:5434/genai}"
+
+logging:
+  level:
+    root: INFO
+    com.freightsource.ragassistant: INFO
+    # Logs the full request/response payload sent to and received from Claude
+    # on every endpoint (see AiCapabilitiesConfig#simpleLoggerAdvisor).
+    org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: DEBUG
